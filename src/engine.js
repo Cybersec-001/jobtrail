@@ -1,0 +1,23 @@
+import {z} from 'zod';
+const bounded=z.string().trim().max(5000);
+const bullet=z.string().trim().min(3).max(400);
+export const profileSchema=z.object({
+ name:z.string().trim().min(2).max(100), headline:bounded.optional(),
+ email:z.email(),phone:z.string().trim().max(40).optional(),location:z.string().trim().max(120).optional(),
+ links:z.array(z.url().max(500)).max(5).default([]),
+ summary:bounded.optional(),skills:z.array(z.string().trim().min(1).max(80)).max(60).default([]),
+ experience:z.array(z.object({title:bounded,organization:bounded,location:bounded.optional(),start:bounded,end:bounded.optional(),bullets:z.array(bullet).max(12)})).max(20).default([]),
+ projects:z.array(z.object({name:bounded,url:z.url().optional(),bullets:z.array(bullet).max(8)})).max(20).default([]),
+ education:z.array(z.object({degree:bounded,institution:bounded,dates:bounded.optional(),details:bounded.optional()})).max(10).default([]),
+ certifications:z.array(bounded).max(20).default([])
+}).strict();
+export const requestSchema=z.object({profile:profileSchema,job:z.object({title:z.string().trim().min(2).max(200),company:z.string().trim().max(200).optional(),description:z.string().trim().min(50).max(25000)}).strict()}).strict();
+const words=s=>new Set(String(s).toLowerCase().match(/[a-z][a-z+#.\d-]{2,}/g)||[]);
+const score=(text,jobWords)=>[...words(text)].filter(w=>jobWords.has(w)).length;
+export function tailor(input){const {profile,job}=requestSchema.parse(input),jw=words(`${job.title} ${job.description}`);
+ const rank=(a,b)=>score(b.text,jw)-score(a.text,jw)||a.index-b.index;
+ const skills=profile.skills.map((text,index)=>({text,index})).sort(rank).map(x=>x.text);
+ const jobs=profile.experience.map((v,index)=>({...v,index,bullets:v.bullets.map((text,index)=>({text,index})).sort(rank).map(x=>x.text)})).sort((a,b)=>score(`${b.title} ${b.organization} ${b.bullets.join(' ')}`,jw)-score(`${a.title} ${a.organization} ${a.bullets.join(' ')}`,jw)||a.index-b.index).map(({index,...v})=>v);
+ const projects=profile.projects.map((v,index)=>({...v,index,bullets:v.bullets.map((text,index)=>({text,index})).sort(rank).map(x=>x.text)})).sort((a,b)=>score(`${b.name} ${b.bullets.join(' ')}`,jw)-score(`${a.name} ${a.bullets.join(' ')}`,jw)||a.index-b.index).map(({index,...v})=>v);
+ return {name:profile.name,headline:profile.headline,contact:{email:profile.email,phone:profile.phone,location:profile.location,links:profile.links},summary:profile.summary,skills,experience:jobs,projects,education:profile.education,certifications:profile.certifications,target:{title:job.title,company:job.company},method:'evidence-only ranking; no invented claims'};
+                             }
